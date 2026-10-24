@@ -127,7 +127,7 @@ struct SettingsView: View {
             HStack {
                 Button("Сбросить") { settings.reset() }.buttonStyle(.plain).foregroundStyle(.secondary)
                 Spacer()
-                Text("v0.2.0").font(.caption).foregroundStyle(.tertiary)
+                Text("v0.2.1").font(.caption).foregroundStyle(.tertiary)
                 Button("Выйти") { engine.stop(); NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
             }
         }

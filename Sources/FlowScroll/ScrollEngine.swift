@@ -26,10 +26,8 @@ final class ScrollEngine: ObservableObject {
     private var lastFrame = CACurrentMediaTime()
     private var displayFrames = 0
     private var longestFrame = 0.0
-    private var eventLocation = CGPoint.zero
-    private var eventFlags: CGEventFlags = []
+    private var context = ScrollContext(origin: .zero, flags: [])
     private var targetPID: pid_t = 0
-    private let marker: Int64 = 0x464C4F575343
     private let modifierMask: CGEventFlags = [.maskShift, .maskControl, .maskAlternate, .maskCommand, .maskSecondaryFn]
 
     init(settings: Settings) {
@@ -95,7 +93,7 @@ final class ScrollEngine: ObservableObject {
             if let tap, settings.enabled { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
-        guard event.getIntegerValueField(.eventSourceUserData) != marker else { return Unmanaged.passUnretained(event) }
+        guard event.getIntegerValueField(.eventSourceUserData) != ScrollContext.marker else { return Unmanaged.passUnretained(event) }
         guard settings.enabled,
               !event.flags.contains(.maskControl), !event.flags.contains(.maskCommand),
               !settings.excludedApps.contains(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "") else {
@@ -124,13 +122,12 @@ final class ScrollEngine: ObservableObject {
         let y = distance.y
         let x = distance.x
         guard x != 0 || y != 0 else { return Unmanaged.passUnretained(event) }
-        if event.flags != eventFlags { cancelMotion() }
-        eventLocation = event.location
-        eventFlags = event.flags
+        if event.flags != context.flags { cancelMotion() }
+        context = ScrollContext(origin: event.location, flags: event.flags)
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         let wasAnimating = animation.isRunning
         let now = CACurrentMediaTime()
-        guard animation.start(at: eventLocation) else {
+        guard animation.start(at: context.origin) else {
             latestInputStatus = "Нет синхронизации с экраном: системная прокрутка"
             return Unmanaged.passUnretained(event)
         }
@@ -148,7 +145,7 @@ final class ScrollEngine: ObservableObject {
 
     private func tick() {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
-              CGEventSource.flagsState(.combinedSessionState).intersection(modifierMask) == eventFlags.intersection(modifierMask) else { cancelMotion(); return }
+              CGEventSource.flagsState(.combinedSessionState).intersection(modifierMask) == context.flags.intersection(modifierMask) else { cancelMotion(); return }
         let now = CACurrentMediaTime()
         let elapsed = max(0, now - lastFrame)
         displayFrames += 1
@@ -156,13 +153,12 @@ final class ScrollEngine: ObservableObject {
         lastFrame = now
         let y = vertical.step(elapsed: elapsed, duration: settings.duration)
         let x = horizontal.step(elapsed: elapsed, duration: settings.duration)
-        if x != 0 || y != 0,
-           let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: y, wheel2: x, wheel3: 0) {
-            event.location = eventLocation
-            event.flags = eventFlags
-            event.setIntegerValueField(.eventSourceUserData, value: marker)
-            event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
-            event.post(tap: .cghidEventTap)
+        if x != 0 || y != 0 {
+            guard let event = context.makeFrame(y: y, x: x, currentLocation: CGEvent(source: nil)?.location) else {
+                cancelMotion()
+                return
+            }
+            event.post(tap: ScrollContext.postingTap)
             emittedFrames += 1
         }
         if !vertical.isActive && !horizontal.isActive { cancelMotion() }
@@ -183,7 +179,7 @@ final class ScrollEngine: ObservableObject {
             "gestureEvents": gestureEvents, "emittedFrames": emittedFrames,
             "inputStatus": inputStatus, "displayFrames": displayFrames,
             "longestFrameMs": longestFrame * 1000, "originalRunning": originalRunning,
-            "version": "0.2.0"]
+            "version": "0.2.1"]
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]) {
             let path = NSTemporaryDirectory() + "flowscroll-status-\(getuid()).json"
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)

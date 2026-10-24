@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 @main
 struct ScrollMotionTests {
@@ -16,11 +17,40 @@ struct ScrollMotionTests {
         testHighResolutionWheelUsesPointDistance()
         testNativeGesturesPassThrough()
         testDiscreteWheelKeepsScaling()
-        print("PASS: 13 tests (finite impulses, gentle attack, overlapping input, display timing, input classification, acceleration)")
+        testScrollFrameFollowsCurrentPointer()
+        testMissingPointerCancelsOutput()
+        testScrollDoesNotPostAtHardwareTap()
+        print("PASS: 16 tests (motion, input, acceleration, cursor-safe scroll output)")
     }
 
     static func check(_ condition: Bool, _ message: String) {
         guard condition else { fatalError(message) }
+    }
+
+    static func testScrollFrameFollowsCurrentPointer() {
+        let context = ScrollContext(origin: CGPoint(x: 100, y: 100), flags: [.maskShift])
+        for pointer in [CGPoint(x: 300, y: 200), CGPoint(x: -400, y: 500)] {
+            guard let frame = context.makeFrame(y: 5, x: -2, currentLocation: pointer) else {
+                check(false, "Unable to construct scroll frame"); return
+            }
+            check(frame.location == pointer, "Scroll frame reused stale wheel coordinates and can pull the cursor back")
+            check(frame.getIntegerValueField(.eventSourceUserData) == ScrollContext.marker, "Generated event marker missing")
+            check(frame.getIntegerValueField(.scrollWheelEventIsContinuous) == 1, "Pixel scroll marker missing")
+            check(frame.getIntegerValueField(.scrollWheelEventPointDeltaAxis1) == 5, "Vertical distance changed")
+            check(frame.getIntegerValueField(.scrollWheelEventPointDeltaAxis2) == -2, "Horizontal distance changed")
+            check(frame.flags == [.maskShift], "Modifier flags changed")
+        }
+    }
+
+    static func testMissingPointerCancelsOutput() {
+        let context = ScrollContext(origin: CGPoint(x: 100, y: 100), flags: [])
+        check(context.makeFrame(y: 5, x: 0, currentLocation: nil) == nil,
+              "Missing pointer snapshot must not fall back to stale wheel coordinates")
+    }
+
+    static func testScrollDoesNotPostAtHardwareTap() {
+        check(ScrollContext.postingTap == .cgSessionEventTap,
+              "Scroll synthesis must bypass the hardware cursor-processing stage")
     }
 
     static func testPreservesDistanceAtDifferentFrameRates() {
