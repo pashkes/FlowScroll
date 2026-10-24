@@ -6,9 +6,9 @@ import QuartzCore
 final class ScrollEngine: ObservableObject {
     @Published private(set) var hasPermission = false
     @Published private(set) var running = false
-    @Published private(set) var inputStatus = "Покрутите колёсико для проверки"
+    @Published private(set) var inputStatus = "Scroll your mouse wheel to test"
     @Published private(set) var originalRunning = false
-    private var latestInputStatus = "Покрутите колёсико для проверки"
+    private var latestInputStatus = "Scroll your mouse wheel to test"
     private var handledEvents = 0
     private var emittedFrames = 0
     private var pixelEvents = 0
@@ -98,7 +98,7 @@ final class ScrollEngine: ObservableObject {
               !event.flags.contains(.maskControl), !event.flags.contains(.maskCommand),
               !settings.excludedApps.contains(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "") else {
             cancelMotion()
-            latestInputStatus = "Пропущено: выключено, исключение или Ctrl/⌘"
+            latestInputStatus = "Passed through: disabled, excluded app, or Control/Command"
             return Unmanaged.passUnretained(event)
         }
         let input = ScrollInput(
@@ -111,7 +111,7 @@ final class ScrollEngine: ObservableObject {
             pointX: Double(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2)))
         guard let distance = input.distance(speed: settings.speed, reversed: settings.reversed) else {
             gestureEvents += 1
-            latestInputStatus = "Системный жест: без обработки"
+            latestInputStatus = "Native gesture: passed through"
             cancelMotion()
             return Unmanaged.passUnretained(event)
         }
@@ -128,13 +128,13 @@ final class ScrollEngine: ObservableObject {
         let wasAnimating = animation.isRunning
         let now = CACurrentMediaTime()
         guard animation.start(at: context.origin) else {
-            latestInputStatus = "Нет синхронизации с экраном: системная прокрутка"
+            latestInputStatus = "Display sync unavailable: using default scrolling"
             return Unmanaged.passUnretained(event)
         }
         if !wasAnimating { lastFrame = now }
         handledEvents += 1
         if input.continuous { pixelEvents += 1 }
-        latestInputStatus = input.continuous ? "Пиксельное колёсико: инерция включена" : "Обычное колёсико: инерция включена"
+        latestInputStatus = input.continuous ? "Pixel wheel: smoothing active" : "Standard wheel: smoothing active"
         let delay = max(0, now - lastFrame)
         let gain = !input.continuous && settings.accelerate
             ? acceleration.factor(at: now, direction: y != 0 ? y : x) : 1
@@ -171,7 +171,7 @@ final class ScrollEngine: ObservableObject {
     }
 
     private func publishDiagnostics() {
-        let text = !settings.enabled ? "Прокрутка FlowScroll выключена" : latestInputStatus
+        let text = !settings.enabled ? "FlowScroll is disabled" : latestInputStatus
         if inputStatus != text { inputStatus = text }
         // Only aggregate counters; no application names, pointer positions or content.
         let status: [String: Any] = ["permission": hasPermission, "running": running,
@@ -179,7 +179,7 @@ final class ScrollEngine: ObservableObject {
             "gestureEvents": gestureEvents, "emittedFrames": emittedFrames,
             "inputStatus": inputStatus, "displayFrames": displayFrames,
             "longestFrameMs": longestFrame * 1000, "originalRunning": originalRunning,
-            "version": "0.2.1"]
+            "version": "0.2.2"]
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]) {
             let path = NSTemporaryDirectory() + "flowscroll-status-\(getuid()).json"
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
