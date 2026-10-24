@@ -2,6 +2,8 @@
 
 A lightweight macOS menu bar app that smooths mouse wheel scrolling. Built with Swift and SwiftUI, with no third-party dependencies or network requests. Requires macOS 13 or later.
 
+<img src="docs/images/flowscroll.png" alt="FlowScroll menu showing smooth scrolling, speed, animation duration, and app exclusions" width="360">
+
 ## Features
 
 - Display-synchronized scrolling using NSScreen/CADisplayLink on macOS 14+ and Core Video on macOS 13.
