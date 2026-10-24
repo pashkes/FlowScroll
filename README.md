@@ -6,14 +6,14 @@ A lightweight macOS menu bar app that smooths mouse wheel scrolling. Built with 
 
 ## Download and install
 
-**[Download FlowScroll 0.2.2 for macOS](https://github.com/pashkes/FlowScroll/raw/refs/heads/master/downloads/FlowScroll-0.2.2-universal.zip)** — ready to run; no Xcode or compilation required.
+**[Download FlowScroll 0.2.2 for macOS](https://github.com/pashkes/FlowScroll/releases/download/v0.2.2/FlowScroll-0.2.2-universal.zip)** — ready to run; no Xcode or compilation required. See the [latest release and release notes](https://github.com/pashkes/FlowScroll/releases/latest).
 
 1. Download and unzip the archive.
 2. Move **FlowScroll.app** to **Applications** before opening it or granting permissions.
 3. Open the app and click the mouse icon in the menu bar.
 4. Enable FlowScroll in **System Settings → Privacy & Security → Accessibility**. Restart the app if necessary.
 
-The repository is private, so you must be signed in to a GitHub account with access to download the file. The [SHA-256 checksum](downloads/FlowScroll-0.2.2-universal.zip.sha256) is included for integrity verification.
+The repository is private, so you must be signed in to a GitHub account with access to download the file. The [SHA-256 checksum](https://github.com/pashkes/FlowScroll/releases/download/v0.2.2/FlowScroll-0.2.2-universal.zip.sha256) is included for integrity verification. Ready-to-run builds are distributed as release assets; the source tree contains the code and packaging scripts.
 
 ### Compatibility
 
@@ -64,6 +64,8 @@ To build the universal downloadable ZIP and checksum:
 ```sh
 bash scripts/package.sh
 ```
+
+The output files are written to `build/releases/` and can be attached to a GitHub Release.
 
 For regular use, move the app to `~/Applications` or `/Applications` **before granting permissions**. Click the mouse icon in the menu bar, open System Settings, and enable FlowScroll under **Privacy & Security → Accessibility**. Restart the app if necessary. Run only one copy at a time.
 

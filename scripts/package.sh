@@ -15,7 +15,8 @@ for ARCH in arm64 x86_64; do
 done
 
 APP="$PWD/build/distribution/FlowScroll.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" downloads
+OUTPUT="$PWD/build/releases"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$OUTPUT"
 lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/FlowScroll"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 codesign --force --sign - --identifier local.flowscroll.app "$APP"
@@ -23,9 +24,9 @@ codesign --verify --deep --strict "$APP"
 
 ARCHIVE="FlowScroll-$VERSION-universal.zip"
 # A bundle-aware ZIP preserves the executable and app structure on macOS.
-ditto -c -k --sequesterRsrc --keepParent "$APP" "downloads/$ARCHIVE"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUTPUT/$ARCHIVE"
 (
-  cd downloads
+  cd "$OUTPUT"
   shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
 )
-echo "Packaged: downloads/$ARCHIVE"
+echo "Packaged: $OUTPUT/$ARCHIVE"
