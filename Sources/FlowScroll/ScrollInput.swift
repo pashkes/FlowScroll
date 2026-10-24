@@ -17,6 +17,9 @@ struct ScrollInput {
         guard !isNativeGesture else { return nil }
         let scale = speed * (reversed ? -1.0 : 1.0)
         if continuous { return (pointY * scale, pointX * scale) }
-        return (lineY * 16 * scale, lineX * 16 * scale)
+        // Use wheel direction, not macOS's already accelerated line magnitude.
+        let y = lineY == 0 ? 0.0 : (lineY < 0 ? -60.0 : 60.0)
+        let x = lineX == 0 ? 0.0 : (lineX < 0 ? -60.0 : 60.0)
+        return (y * scale, x * scale)
     }
 }

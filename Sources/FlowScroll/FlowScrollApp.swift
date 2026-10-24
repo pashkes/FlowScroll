@@ -45,6 +45,10 @@ struct SettingsView: View {
             Toggle("Плавная прокрутка", isOn: $settings.enabled)
                 .font(.headline).toggleStyle(.switch)
             Text(engine.inputStatus).font(.caption).foregroundStyle(.secondary)
+            if engine.originalRunning {
+                Label("SmoothScroll тоже запущен. Для сравнения выключите прокрутку в нём.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
 
             if !engine.hasPermission {
                 VStack(alignment: .leading, spacing: 8) {
@@ -67,11 +71,12 @@ struct SettingsView: View {
                     Slider(value: $settings.speed, in: 0.25...4, step: 0.05).tint(.mint)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack { Text("Инерция"); Spacer(); Text("\(Int(settings.duration * 1000)) мс").monospacedDigit().foregroundStyle(.secondary) }
-                    Slider(value: $settings.duration, in: 0.04...0.35, step: 0.01).tint(.mint)
+                    HStack { Text("Длительность движения"); Spacer(); Text("\(Int((settings.duration * 1000).rounded())) мс").monospacedDigit().foregroundStyle(.secondary) }
+                    Slider(value: $settings.duration, in: 0.12...0.8, step: 0.01).tint(.mint)
                     HStack { Text("Чётко"); Spacer(); Text("Мягко") }.font(.caption2).foregroundStyle(.secondary)
                 }
                 Toggle("Обратное направление", isOn: $settings.reversed)
+                Toggle("Ускорять быстрое вращение", isOn: $settings.accelerate)
             }
 
             Divider()
@@ -122,7 +127,7 @@ struct SettingsView: View {
             HStack {
                 Button("Сбросить") { settings.reset() }.buttonStyle(.plain).foregroundStyle(.secondary)
                 Spacer()
-                Text("v0.1.1").font(.caption).foregroundStyle(.tertiary)
+                Text("v0.2.0").font(.caption).foregroundStyle(.tertiary)
                 Button("Выйти") { engine.stop(); NSApplication.shared.terminate(nil) }.buttonStyle(.plain)
             }
         }

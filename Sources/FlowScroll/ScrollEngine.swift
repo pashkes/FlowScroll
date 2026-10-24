@@ -1,11 +1,13 @@
 import AppKit
 import ApplicationServices
 import Combine
+import QuartzCore
 
 final class ScrollEngine: ObservableObject {
     @Published private(set) var hasPermission = false
     @Published private(set) var running = false
     @Published private(set) var inputStatus = "Покрутите колёсико для проверки"
+    @Published private(set) var originalRunning = false
     private var latestInputStatus = "Покрутите колёсико для проверки"
     private var handledEvents = 0
     private var emittedFrames = 0
@@ -14,13 +16,16 @@ final class ScrollEngine: ObservableObject {
     private let settings: Settings
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var animation: Timer?
+    private let animation = DisplayClock()
     private var permissionTimer: Timer?
     private var subscriptions = Set<AnyCancellable>()
     private var observers: [NSObjectProtocol] = []
     private var vertical = ScrollMotion()
     private var horizontal = ScrollMotion()
-    private var lastFrame = ProcessInfo.processInfo.systemUptime
+    private var acceleration = WheelAcceleration()
+    private var lastFrame = CACurrentMediaTime()
+    private var displayFrames = 0
+    private var longestFrame = 0.0
     private var eventLocation = CGPoint.zero
     private var eventFlags: CGEventFlags = []
     private var targetPID: pid_t = 0
@@ -29,10 +34,11 @@ final class ScrollEngine: ObservableObject {
 
     init(settings: Settings) {
         self.settings = settings
+        animation.onFrame = { [weak self] in self?.tick() }
         settings.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.cancelMotion(); self?.refresh() }
         }.store(in: &subscriptions)
-        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.willSleepNotification] {
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.cancelMotion() })
         }
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
@@ -58,6 +64,8 @@ final class ScrollEngine: ObservableObject {
     }
 
     func refresh() {
+        let original = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.galambalazs.SmoothScroll" }
+        if originalRunning != original { originalRunning = original }
         let trusted = AXIsProcessTrusted()
         if hasPermission != trusted { hasPermission = trusted }
         guard trusted, settings.enabled else { stop(); return }
@@ -120,25 +128,31 @@ final class ScrollEngine: ObservableObject {
         eventLocation = event.location
         eventFlags = event.flags
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+        let wasAnimating = animation.isRunning
+        let now = CACurrentMediaTime()
+        guard animation.start(at: eventLocation) else {
+            latestInputStatus = "Нет синхронизации с экраном: системная прокрутка"
+            return Unmanaged.passUnretained(event)
+        }
+        if !wasAnimating { lastFrame = now }
         handledEvents += 1
         if input.continuous { pixelEvents += 1 }
         latestInputStatus = input.continuous ? "Пиксельное колёсико: инерция включена" : "Обычное колёсико: инерция включена"
-        vertical.add(y)
-        horizontal.add(x)
-        if animation == nil {
-            lastFrame = ProcessInfo.processInfo.systemUptime
-            let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in self?.tick() }
-            animation = timer
-            RunLoop.main.add(timer, forMode: .common)
-        }
+        let delay = max(0, now - lastFrame)
+        let gain = !input.continuous && settings.accelerate
+            ? acceleration.factor(at: now, direction: y != 0 ? y : x) : 1
+        vertical.add(y * gain, delay: delay)
+        horizontal.add(x * gain, delay: delay)
         return nil
     }
 
     private func tick() {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
               CGEventSource.flagsState(.combinedSessionState).intersection(modifierMask) == eventFlags.intersection(modifierMask) else { cancelMotion(); return }
-        let now = ProcessInfo.processInfo.systemUptime
-        let elapsed = min(0.05, now - lastFrame)
+        let now = CACurrentMediaTime()
+        let elapsed = max(0, now - lastFrame)
+        displayFrames += 1
+        longestFrame = max(longestFrame, elapsed)
         lastFrame = now
         let y = vertical.step(elapsed: elapsed, duration: settings.duration)
         let x = horizontal.step(elapsed: elapsed, duration: settings.duration)
@@ -147,24 +161,29 @@ final class ScrollEngine: ObservableObject {
             event.location = eventLocation
             event.flags = eventFlags
             event.setIntegerValueField(.eventSourceUserData, value: marker)
-            event.post(tap: .cgSessionEventTap)
+            event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            event.post(tap: .cghidEventTap)
             emittedFrames += 1
         }
         if !vertical.isActive && !horizontal.isActive { cancelMotion() }
     }
 
     private func cancelMotion() {
-        animation?.invalidate(); animation = nil
+        animation.stop()
         vertical.reset(); horizontal.reset()
+        acceleration.reset()
     }
 
     private func publishDiagnostics() {
-        if inputStatus != latestInputStatus { inputStatus = latestInputStatus }
+        let text = !settings.enabled ? "Прокрутка FlowScroll выключена" : latestInputStatus
+        if inputStatus != text { inputStatus = text }
         // Only aggregate counters; no application names, pointer positions or content.
         let status: [String: Any] = ["permission": hasPermission, "running": running,
             "handledEvents": handledEvents, "pixelEvents": pixelEvents,
             "gestureEvents": gestureEvents, "emittedFrames": emittedFrames,
-            "inputStatus": inputStatus]
+            "inputStatus": inputStatus, "displayFrames": displayFrames,
+            "longestFrameMs": longestFrame * 1000, "originalRunning": originalRunning,
+            "version": "0.2.0"]
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]) {
             let path = NSTemporaryDirectory() + "flowscroll-status-\(getuid()).json"
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
